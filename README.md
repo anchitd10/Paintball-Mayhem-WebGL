@@ -30,4 +30,5 @@ Paintball Mayhem is a simple WebGL-based game where players control a shooter at
 ## Game Over
 
 When a block reaches the bottom of the screen, the game concludes. An alert will display your final score, allowing you to assess your performance.
+
 **Game Over**: When the game ends, an alert will display your final score.
