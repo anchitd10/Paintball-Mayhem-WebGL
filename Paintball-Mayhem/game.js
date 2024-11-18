@@ -1,17 +1,15 @@
 const canvas = document.getElementById("gameCanvas");
 const gl = canvas.getContext("webgl");
 
-let score = 0;  // Keep track of the score
-let gameOver = false;  // Game over flag
-
-let speedMultiplier = 1;  // Start multiplier at 1
+let score = 0;
+let gameOver = false;
+let speedMultiplier = 1;
 const difficultyIncreaseInterval = 5000;
 
 if (!gl) {
     alert("WebGL not supported. Try a different browser.");
 }
 
-// Set canvas size to full window
 function resizeCanvas() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
@@ -19,25 +17,25 @@ function resizeCanvas() {
 }
 
 window.addEventListener('resize', resizeCanvas);
-resizeCanvas();  // Initial call to set canvas size
+resizeCanvas();
 
-// Vertex shader
+// Modified vertex shader to use matrices
 const vertexShaderSource = `
     attribute vec2 position;
-    attribute vec2 texCoord; // Add texture coordinate attribute
+    attribute vec2 texCoord;
     varying vec2 v_texCoord;
-    uniform vec2 translation;
+    uniform mat3 u_matrix;
     uniform vec2 resolution;
     
     void main() {
-        vec2 newPosition = ((position + translation) / resolution) * 2.0 - 1.0;  // Map to clip space
-        newPosition.y = -newPosition.y;  // Flip y-axis to match WebGL's bottom-left origin
-        gl_Position = vec4(newPosition, 0, 1);
-        v_texCoord = texCoord; // Pass the texture coordinates to fragment shader
+        vec3 pos = u_matrix * vec3(position, 1.0);
+        vec2 clipSpace = (pos.xy / resolution) * 2.0 - 1.0;
+        clipSpace.y = -clipSpace.y;
+        gl_Position = vec4(clipSpace, 0, 1);
+        v_texCoord = texCoord;
     }
 `;
 
-// Fragment shader
 const fragmentShaderSource = `
     precision mediump float;
     uniform sampler2D u_texture;
@@ -46,6 +44,44 @@ const fragmentShaderSource = `
         gl_FragColor = texture2D(u_texture, v_texCoord);
     }
 `;
+
+// Matrix operations
+function makeTranslation(tx, ty) {
+    return new Float32Array([
+        1, 0, 0,
+        0, 1, 0,
+        tx, ty, 1
+    ]);
+}
+
+function makeScale(sx, sy) {
+    return new Float32Array([
+        sx, 0, 0,
+        0, sy, 0,
+        0, 0, 1
+    ]);
+}
+
+function multiplyMatrices(a, b) {
+    const a00 = a[0], a01 = a[1], a02 = a[2];
+    const a10 = a[3], a11 = a[4], a12 = a[5];
+    const a20 = a[6], a21 = a[7], a22 = a[8];
+    const b00 = b[0], b01 = b[1], b02 = b[2];
+    const b10 = b[3], b11 = b[4], b12 = b[5];
+    const b20 = b[6], b21 = b[7], b22 = b[8];
+
+    return new Float32Array([
+        b00 * a00 + b01 * a10 + b02 * a20,
+        b00 * a01 + b01 * a11 + b02 * a21,
+        b00 * a02 + b01 * a12 + b02 * a22,
+        b10 * a00 + b11 * a10 + b12 * a20,
+        b10 * a01 + b11 * a11 + b12 * a21,
+        b10 * a02 + b11 * a12 + b12 * a22,
+        b20 * a00 + b21 * a10 + b22 * a20,
+        b20 * a01 + b21 * a11 + b22 * a21,
+        b20 * a02 + b21 * a12 + b22 * a22,
+    ]);
+}
 
 // Compile shaders
 function compileShader(gl, source, type) {
@@ -74,9 +110,9 @@ if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
 
 gl.useProgram(program);
 
-// Get attribute/uniform locations
+// Get locations
 const positionLocation = gl.getAttribLocation(program, "position");
-const translationLocation = gl.getUniformLocation(program, "translation");
+const matrixLocation = gl.getUniformLocation(program, "u_matrix");
 const resolutionLocation = gl.getUniformLocation(program, "resolution");
 const textureLocation = gl.getUniformLocation(program, "u_texture");
 
@@ -84,48 +120,42 @@ const textureLocation = gl.getUniformLocation(program, "u_texture");
 const positionBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 const vertices = new Float32Array([
-    // Position coordinates     // Texture coordinates
-    -50, -50,                 0, 0,   // Bottom left
-    50, -50,                  1, 0,   // Bottom right
-    -50, 50,                  0, 1,   // Top left
-    50, 50,                   1, 1    // Top right
+    -50, -50, 0, 0,
+    50, -50, 1, 0,
+    -50, 50, 0, 1,
+    50, 50, 1, 1
 ]);
 gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-// Bind position attribute
+// Bind attributes
 const texCoordLocation = gl.getAttribLocation(program, "texCoord");
-
 gl.enableVertexAttribArray(positionLocation);
 gl.enableVertexAttribArray(texCoordLocation);
-
-// Point to the position attribute
 gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 4 * 4, 0);
-// Point to the texCoord attribute
 gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 4 * 4, 2 * 4);
 
-// Texture loading
+// Load textures (same as before)
 function loadTexture(gl, url) {
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 255, 255]));
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, 
+        new Uint8Array([0, 0, 255, 255]));
 
     const image = new Image();
-    image.onload = function () {
+    image.onload = function() {
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
         gl.generateMipmap(gl.TEXTURE_2D);
-
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
     };
     image.src = url;
-
     return texture;
 }
 
-// ----------Textures----------
+// Load all textures
 const blockTexture = loadTexture(gl, 'Assets/crate.png');
 const shooterTexture = loadTexture(gl, 'Assets/toy-gun-2.png');
 const backgroundTexture = loadTexture(gl, 'Assets/bg-1.png');
@@ -138,27 +168,26 @@ const projectileTextures = [
     loadTexture(gl, 'Assets/paint-pink.png')
 ];
 
-// ----------SFX---------------
+// Load sounds
 const shootSound = new Audio('Assets/shoot.mp3');
 const blockDestroySound = new Audio('Assets/destroy.mp3');
 const gameOverSound = new Audio('Assets/fail.mp3');
 
-
-// Shooter object
+// Game objects with matrices
 const shooter = {
     position: [canvas.width / 2, 50],
     width: 100,
     height: 100,
-    texture: shooterTexture
+    texture: shooterTexture,
+    matrix: makeTranslation(canvas.width / 2, 50)
 };
 
 let projectiles = [];
-
 let blocks = [];
-
 const keys = {};
 let canShoot = true;
 
+// Event listeners
 window.addEventListener('keydown', (e) => {
     keys[e.key] = true;
 });
@@ -166,7 +195,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => {
     keys[e.key] = false;
     if (e.key === ' ') {
-        canShoot = true;  // reset shoot flag on spacebar release
+        canShoot = true;
     }
 });
 
@@ -176,41 +205,44 @@ function increaseDifficulty() {
 
 setInterval(increaseDifficulty, difficultyIncreaseInterval);
 
-// shooter movement
+// Updated movement functions using matrices
 function moveShooter() {
     if (keys['ArrowLeft'] && shooter.position[0] > shooter.width / 2) {
         shooter.position[0] -= 10;
+        shooter.matrix = makeTranslation(shooter.position[0], shooter.position[1]);
     }
     if (keys['ArrowRight'] && shooter.position[0] < canvas.width - shooter.width / 2) {
         shooter.position[0] += 10;
+        shooter.matrix = makeTranslation(shooter.position[0], shooter.position[1]);
     }
     if (keys[' '] && canShoot) {
         shootProjectile();
-        canShoot = false;  // Disable shooting until the spacebar is released
+        canShoot = false;
     }
 }
 
-// shoot projectiles
 function shootProjectile() {
     const randomTexture = projectileTextures[Math.floor(Math.random() * projectileTextures.length)];
     projectiles.push({
         position: [...shooter.position],
         velocity: 10,
-        texture: randomTexture
+        texture: randomTexture,
+        matrix: makeTranslation(shooter.position[0], shooter.position[1])
     });
     shootSound.play();
 }
 
-// Spawning blocks
 function spawnBlock() {
+    const xPos = Math.random() * canvas.width;
     blocks.push({
-        position: [Math.random() * canvas.width, canvas.height],
-        velocity: 2
+        position: [xPos, canvas.height],
+        velocity: 2,
+        matrix: makeTranslation(xPos, canvas.height)
     });
 }
 setInterval(spawnBlock, 2000);
 
-// collision detection
+// Collision detection (same as before)
 function detectCollision(block, projectile) {
     return (
         projectile.position[0] < block.position[0] + 50 &&
@@ -229,23 +261,23 @@ function detectShooterCollision(block) {
     );
 }
 
+// Updated update function using matrices
 function update() {
     if (gameOver) return;
     
     moveShooter();
 
-    // move projectiles
     projectiles = projectiles.filter(p => p.position[1] < canvas.height);
     projectiles.forEach(p => {
         p.position[1] += p.velocity;
+        p.matrix = makeTranslation(p.position[0], p.position[1]);
     });
 
-    // dynamic difficulty
     blocks.forEach(block => {
-        block.position[1] -= block.velocity * speedMultiplier;  // Apply speed multiplier
+        block.position[1] -= block.velocity * speedMultiplier;
+        block.matrix = makeTranslation(block.position[0], block.position[1]);
     });
 
-    // check for collision and update score
     blocks = blocks.filter(block => {
         if (detectShooterCollision(block)) {
             gameOver = true;
@@ -279,40 +311,33 @@ function update() {
     });
 }
 
-// render background
+// Updated render functions using matrices
 function renderBackground() {
     gl.bindTexture(gl.TEXTURE_2D, backgroundTexture);
-    gl.uniform2fv(translationLocation, [canvas.width / 2, canvas.height / 2]);
+    
+    const bgMatrix = multiplyMatrices(
+        makeTranslation(canvas.width / 2, canvas.height / 2),
+        makeScale(canvas.width, canvas.height)
+    );
+    
+    gl.uniform2f(resolutionLocation, canvas.width, canvas.height);
+    gl.uniformMatrix3fv(matrixLocation, false, bgMatrix);
 
-    const width = canvas.width;
-    const height = canvas.height;
     const vertices = new Float32Array([
-        -width / 2, -height / 2, 0, 0,
-        width / 2, -height / 2, 1, 0,
-        -width / 2, height / 2, 0, 1,
-        width / 2, height / 2, 1, 1
+        -0.5, -0.5, 0, 0,
+        0.5, -0.5, 1, 0,
+        -0.5, 0.5, 0, 1,
+        0.5, 0.5, 1, 1
     ]);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
-
-// Render objects
 function renderObject(object) {
-    gl.uniform2fv(translationLocation, object.position);
-
-    // Update the vertex buffer for size if necessary
-    const width = object.width || 100;
-    const height = object.height || 100;
-    const vertices = new Float32Array([
-        -width / 2, -height / 2, 0, 0,
-        width / 2, -height / 2, 1, 0,
-        -width / 2, height / 2, 0, 1,
-        width / 2, height / 2, 1, 1
-    ]);
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
-
+    const scaleMatrix = makeScale(object.width || 100, object.height || 100);
+    const finalMatrix = multiplyMatrices(object.matrix, scaleMatrix);
+    
+    gl.uniformMatrix3fv(matrixLocation, false, finalMatrix);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
 }
 
@@ -323,6 +348,7 @@ function renderProjectiles() {
     });
 }
 
+// Score display
 const scoreElement = document.createElement("div");
 scoreElement.id = "score";
 scoreElement.style.position = "absolute";
