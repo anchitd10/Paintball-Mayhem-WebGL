@@ -51,6 +51,10 @@ function makeTranslation(tx, ty) {
         1, 0, 0,
         0, 1, 0,
         tx, ty, 1
+
+        // 1, 0, tx,
+        // 0, 1, ty,
+        // 0, 0, 1
     ]);
 }
 
@@ -120,10 +124,13 @@ const textureLocation = gl.getUniformLocation(program, "u_texture");
 const positionBuffer = gl.createBuffer();
 gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
 const vertices = new Float32Array([
-    -50, -50, 0, 0,
-    50, -50, 1, 0,
-    -50, 50, 0, 1,
-    50, 50, 1, 1
+//    X,  Y            u, v
+    -50, -50,          0, 0,
+    50, -50,           1, 0,
+    -50, 50,           0, 1,
+    50, 50,            1, 1
+    // (0, 0) corresponds to the bottom-left corner of the texture.
+    // (1, 1) corresponds to the top-right corner of the texture.
 ]);
 gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
@@ -131,8 +138,21 @@ gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 const texCoordLocation = gl.getAttribLocation(program, "texCoord");
 gl.enableVertexAttribArray(positionLocation);
 gl.enableVertexAttribArray(texCoordLocation);
-gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 4 * 4, 0);
-gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 4 * 4, 2 * 4);
+gl.vertexAttribPointer(
+    positionLocation, 
+    2, 
+    gl.FLOAT, 
+    false, 
+    4 * 4, 
+    0
+);
+gl.vertexAttribPointer(
+    texCoordLocation, 
+    2, 
+    gl.FLOAT, 
+    false, 
+    4 * 4, 
+    2 * 4);
 
 // Load textures (same as before)
 function loadTexture(gl, url) {
