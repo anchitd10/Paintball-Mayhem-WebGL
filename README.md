@@ -1,7 +1,7 @@
 # Paintball-Mayhem-WebGL
 ## Description
 
-Paintball Mayhem is a simple WebGL-based game where players control a shooter at the bottom of the screen. Blocks fall from the top, and players can shoot paintballs to paint them. The game includes dynamic difficulty, increasing the speed of falling blocks over time, and features a scoring system based on the number of blocks destroyed.
+Paintball Mayhem is a WebGL-based game where players control a shooter at the bottom of the screen. Blocks fall from the top, and players can shoot paintballs to paint them. The game includes dynamic difficulty, increasing the speed of falling blocks over time, and features a scoring system based on the number of blocks destroyed.
 
 ## Features
 
